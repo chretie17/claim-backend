@@ -1,7 +1,7 @@
 const db = require('../config/db');
 
 // ============================================================================
-// INSURANCE CONFIGURATION SYSTEM (from original controller)
+// INSURANCE CONFIGURATION SYSTEM (UPDATED - NO MAXIMUMS)
 // ============================================================================
 
 const INSURANCE_CONFIG = {
@@ -12,21 +12,18 @@ const INSURANCE_CONFIG = {
         name: 'Silver Plan', 
         coverage_percentage: 50, 
         premium_multiplier: 1.0,
-        max_claim_amount: 500000,
         description: 'Basic motor coverage - 50% damage coverage'
       },
       bronze: { 
         name: 'Bronze Plan', 
         coverage_percentage: 70, 
         premium_multiplier: 1.4,
-        max_claim_amount: 750000,
         description: 'Enhanced motor coverage - 70% damage coverage'
       },
       gold: { 
         name: 'Gold Plan', 
         coverage_percentage: 100, 
         premium_multiplier: 2.0,
-        max_claim_amount: 1000000,
         description: 'Premium motor coverage - 100% damage coverage'
       }
     },
@@ -39,21 +36,18 @@ const INSURANCE_CONFIG = {
         name: 'Basic Property', 
         coverage_percentage: 60, 
         premium_multiplier: 1.0,
-        max_claim_amount: 2000000,
         description: 'Basic property coverage - 60% damage coverage'
       },
       comprehensive: { 
         name: 'Comprehensive', 
         coverage_percentage: 85, 
         premium_multiplier: 1.6,
-        max_claim_amount: 5000000,
         description: 'Comprehensive property coverage - 85% damage coverage'
       },
       premium: { 
         name: 'Premium Property', 
         coverage_percentage: 100, 
         premium_multiplier: 2.2,
-        max_claim_amount: 10000000,
         description: 'Premium property coverage - 100% damage coverage'
       }
     },
@@ -66,21 +60,18 @@ const INSURANCE_CONFIG = {
         name: 'Term Life', 
         coverage_percentage: 100, 
         premium_multiplier: 1.0,
-        max_claim_amount: 5000000,
         description: 'Term life insurance - Full coverage for specified term'
       },
       whole: { 
         name: 'Whole Life', 
         coverage_percentage: 100, 
         premium_multiplier: 2.5,
-        max_claim_amount: 10000000,
         description: 'Whole life insurance - Lifetime coverage with investment'
       },
       universal: { 
         name: 'Universal Life', 
         coverage_percentage: 100, 
         premium_multiplier: 2.0,
-        max_claim_amount: 15000000,
         description: 'Universal life insurance - Flexible premiums and coverage'
       }
     },
@@ -93,21 +84,18 @@ const INSURANCE_CONFIG = {
         name: 'Basic Health', 
         coverage_percentage: 70, 
         premium_multiplier: 1.0,
-        max_claim_amount: 1000000,
         description: 'Basic health coverage - 70% medical expenses'
       },
       family: { 
         name: 'Family Health', 
         coverage_percentage: 85, 
         premium_multiplier: 1.8,
-        max_claim_amount: 2000000,
         description: 'Family health coverage - 85% medical expenses'
       },
       premium: { 
         name: 'Premium Health', 
         coverage_percentage: 95, 
         premium_multiplier: 2.5,
-        max_claim_amount: 5000000,
         description: 'Premium health coverage - 95% medical expenses'
       }
     },
@@ -116,10 +104,10 @@ const INSURANCE_CONFIG = {
 };
 
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (UPDATED - REMOVED MAX AMOUNT CHECKS)
 // ============================================================================
 
-// Enhanced fraud detection
+// Enhanced fraud detection (REMOVED max_claim_amount references)
 const detectFraud = (claimData) => {
   let fraudScore = 0;
   let riskLevel = 'LOW';
@@ -131,25 +119,26 @@ const detectFraud = (claimData) => {
   if (!config) {
     fraudScore += 50;
   } else {
-    if (claimData.claim_amount > config.max_claim_amount) {
-      fraudScore += 40;
-    }
+    // REMOVED: max_claim_amount check
+    // OLD CODE: if (claimData.claim_amount > config.max_claim_amount) { fraudScore += 40; }
 
+    // Keep reasonable fraud detection based on typical claim amounts
     switch (insuranceType) {
       case 'motor':
-        if (claimData.claim_amount > 500000) fraudScore += 25;
-        if (claimData.claim_amount > 1000000) fraudScore += 35;
+        // Adjusted thresholds - higher amounts are still unusual but not automatically fraudulent
+        if (claimData.claim_amount > 10000000) fraudScore += 15; // 10M RWF
+        if (claimData.claim_amount > 50000000) fraudScore += 25; // 50M RWF
         break;
       case 'property':
-        if (claimData.claim_amount > 1000000) fraudScore += 20;
-        if (claimData.claim_amount > 5000000) fraudScore += 40;
+        if (claimData.claim_amount > 50000000) fraudScore += 15; // 50M RWF
+        if (claimData.claim_amount > 200000000) fraudScore += 25; // 200M RWF
         break;
       case 'life':
-        if (claimData.claim_amount > 2000000) fraudScore += 15;
+        if (claimData.claim_amount > 100000000) fraudScore += 15; // 100M RWF
         if (claimData.days_since_policy_start < 730) fraudScore += 25;
         break;
       case 'health':
-        if (claimData.claim_amount > 500000) fraudScore += 30;
+        if (claimData.claim_amount > 20000000) fraudScore += 15; // 20M RWF
         if (claimData.frequent_claimer) fraudScore += 25;
         break;
     }
@@ -171,14 +160,15 @@ const detectFraud = (claimData) => {
   return { fraudScore, riskLevel };
 };
 
-// Calculate priority
+// Calculate priority (UPDATED - higher thresholds since no max limits)
 const calculatePriority = (claimData) => {
   let priority = 'medium';
   const insuranceType = claimData.insurance_type;
   
-  if (claimData.claim_amount > 1000000) priority = 'urgent';
-  else if (claimData.claim_amount > 500000) priority = 'high';
-  else if (claimData.claim_amount < 50000) priority = 'low';
+  // Adjusted thresholds for priority since there are no max limits
+  if (claimData.claim_amount > 50000000) priority = 'urgent';      // 50M RWF
+  else if (claimData.claim_amount > 10000000) priority = 'high';   // 10M RWF
+  else if (claimData.claim_amount < 500000) priority = 'low';      // 500K RWF
   
   switch (insuranceType) {
     case 'life':
@@ -199,7 +189,7 @@ const calculatePriority = (claimData) => {
   return priority;
 };
 
-// Calculate coverage amount
+// Calculate coverage amount (FIXED - NO MAXIMUM LIMITS)
 const calculateCoverageAmount = (claimData) => {
   const insuranceType = claimData.insurance_type;
   const category = claimData.insurance_category;
@@ -214,10 +204,10 @@ const calculateCoverageAmount = (claimData) => {
   }
 
   const claimAmount = parseFloat(claimData.claim_amount);
-  const maxClaimAmount = config.max_claim_amount;
   const coveragePercentage = config.coverage_percentage;
 
-  const eligibleAmount = Math.min(claimAmount, maxClaimAmount);
+  // FIXED: No maximum limit - eligible amount is always the full claim amount
+  const eligibleAmount = claimAmount;
   const coveredAmount = (eligibleAmount * coveragePercentage) / 100;
 
   return {
@@ -225,116 +215,268 @@ const calculateCoverageAmount = (claimData) => {
     eligible_amount: eligibleAmount,
     coverage_percentage: coveragePercentage,
     covered_amount: coveredAmount,
-    customer_liability: eligibleAmount - coveredAmount,
-    exceeded_limit: claimAmount > maxClaimAmount
+    customer_liability: claimAmount - coveredAmount,
+    exceeded_limit: false // Never exceeds limit since there's no limit
   };
 };
 
 // ============================================================================
-// CLIENT CLAIMS CONTROLLER
+// MAIN SUBMIT CLAIM FUNCTION WITH FILE UPLOAD SUPPORT
 // ============================================================================
 
-// Submit new claim
 exports.submitClaim = async (req, res) => {
-  const { 
-    policy_number, 
-    insurance_type,
-    insurance_category,
-    claim_type, 
-    incident_date, 
-    claim_amount, 
-    description,
-    additional_details = {}
-  } = req.body;
+  console.log('=== CLAIM SUBMISSION DEBUG ===');
+  console.log('Request body:', req.body);
+  console.log('Uploaded files:', req.files);
+  console.log('File count:', req.files ? req.files.length : 0);
   
-  const user_id = req.user ? req.user.id : req.body.user_id;
+  try {
+    // Extract data from FormData (when files are uploaded) or JSON
+    const {
+      policy_number, // Optional
+      insurance_type,
+      insurance_category,
+      claim_type,
+      incident_date,
+      claim_amount,
+      description,
+      user_id
+    } = req.body;
 
-  // Validation
-  if (!user_id) {
-    return res.status(400).json({ error: 'User ID is required' });
-  }
-
-  if (!policy_number || !insurance_type || !insurance_category || !claim_type || 
-      !incident_date || !claim_amount || !description) {
-    return res.status(400).json({ error: 'All required fields must be provided' });
-  }
-
-  // Validate insurance configuration
-  if (!INSURANCE_CONFIG[insurance_type]) {
-    return res.status(400).json({ error: 'Invalid insurance type' });
-  }
-  
-  if (!INSURANCE_CONFIG[insurance_type].categories[insurance_category]) {
-    return res.status(400).json({ error: 'Invalid insurance category' });
-  }
-
-  // Validate claim type
-  const validClaimTypes = INSURANCE_CONFIG[insurance_type].claim_types;
-  if (!validClaimTypes.includes(claim_type)) {
-    return res.status(400).json({ 
-      error: 'Invalid claim type', 
-      valid_types: validClaimTypes 
-    });
-  }
-
-  // Generate unique claim number
-  const typePrefix = insurance_type.toUpperCase().substring(0, 3);
-  const claim_number = `${typePrefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
-  
-  // Calculate coverage
-  const coverageDetails = calculateCoverageAmount({
-    insurance_type,
-    insurance_category,
-    claim_amount
-  });
-
-  // Enhanced fraud detection
-  const fraudResult = detectFraud({
-    insurance_type,
-    insurance_category,
-    claim_amount,
-    description,
-    ...additional_details
-  });
-  
-  // Calculate priority
-  const priority = calculatePriority({
-    insurance_type,
-    claim_amount,
-    claim_subtype: claim_type
-  });
-
-  const query = `
-    INSERT INTO claims (
-      claim_number, user_id, policy_number, insurance_type, insurance_category,
-      claim_type, incident_date, claim_amount, description, priority, 
-      fraud_score, risk_level, coverage_percentage, max_coverage_amount,
-      estimated_payout, additional_details, status, created_at
-    ) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
-  `;
-
-  db.query(query, [
-    claim_number, user_id, policy_number, insurance_type, insurance_category,
-    claim_type, incident_date, claim_amount, description, priority,
-    fraudResult.fraudScore, fraudResult.riskLevel, coverageDetails.coverage_percentage,
-    coverageDetails.eligible_amount, coverageDetails.covered_amount,
-    JSON.stringify(additional_details)
-  ], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
+    // Handle uploaded files
+    const uploadedFiles = req.files || [];
     
-    res.json({
-      message: 'Claim submitted successfully',
-      claim_id: result.insertId,
-      claim_number,
-      priority,
-      fraud_assessment: {
-        score: fraudResult.fraudScore,
-        risk_level: fraudResult.riskLevel
-      },
-      coverage_details: coverageDetails
+    // Debug logging
+    console.log('Extracted user_id:', user_id);
+    console.log('Insurance type:', insurance_type);
+    console.log('Files received:', uploadedFiles.length);
+
+    // Validation - User ID
+    if (!user_id) {
+      return res.status(400).json({ 
+        error: 'User ID is required',
+        debug: {
+          body: req.body,
+          files: req.files ? req.files.length : 0
+        }
+      });
+    }
+
+    // Convert user_id to number if it's a string
+    const userId = parseInt(user_id);
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'User ID must be a valid number' });
+    }
+
+    // Validate required fields
+    if (!insurance_type || !insurance_category || !claim_type ||
+        !incident_date || !claim_amount || !description) {
+      return res.status(400).json({ 
+        error: 'All required fields must be provided',
+        missing_fields: {
+          insurance_type: !insurance_type,
+          insurance_category: !insurance_category,
+          claim_type: !claim_type,
+          incident_date: !incident_date,
+          claim_amount: !claim_amount,
+          description: !description
+        }
+      });
+    }
+
+    // Validate insurance configuration
+    if (!INSURANCE_CONFIG[insurance_type]) {
+      return res.status(400).json({ 
+        error: 'Invalid insurance type',
+        valid_types: Object.keys(INSURANCE_CONFIG)
+      });
+    }
+     
+    if (!INSURANCE_CONFIG[insurance_type].categories[insurance_category]) {
+      return res.status(400).json({ 
+        error: 'Invalid insurance category',
+        valid_categories: Object.keys(INSURANCE_CONFIG[insurance_type].categories)
+      });
+    }
+
+    // Validate claim type
+    const validClaimTypes = INSURANCE_CONFIG[insurance_type].claim_types;
+    if (!validClaimTypes.includes(claim_type)) {
+      return res.status(400).json({
+        error: 'Invalid claim type',
+        provided_claim_type: claim_type,
+        valid_types: validClaimTypes
+      });
+    }
+
+    // Map claim types to database enum values
+    const CLAIM_TYPE_MAPPING = {
+      'accident': 'auto',
+      'collision': 'auto', 
+      'theft': 'auto',
+      'vandalism': 'auto',
+      'comprehensive': 'auto',
+      'natural_disaster': 'auto',
+      'third_party': 'auto',
+      'medical': 'health',
+      'dental': 'health',
+      'prescription': 'health',
+      'hospital': 'health',
+      'hospitalization': 'health',
+      'surgery': 'health',
+      'medication': 'health',
+      'emergency': 'health',
+      'specialist_consultation': 'health',
+      'fire': 'property',
+      'flood': 'property',
+      'earthquake': 'property',
+      'burglary': 'property',
+      'structural_damage': 'property',
+      'damage': 'property',
+      'death': 'life',
+      'terminal_illness': 'life',
+      'disability': 'life',
+      'accidental_death': 'life',
+      'trip_cancellation': 'travel',
+      'lost_luggage': 'travel',
+      'medical_emergency': 'travel'
+    };
+
+    // Map the claim type to database enum value
+    const db_claim_type = CLAIM_TYPE_MAPPING[claim_type] || 
+      (insurance_type === 'motor' ? 'auto' : insurance_type);
+
+    console.log('Mapped claim type:', claim_type, '->', db_claim_type);
+
+    // Process uploaded files
+    const fileData = uploadedFiles.map(file => ({
+      filename: file.filename,
+      original_name: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      path: file.path,
+      uploaded_at: new Date().toISOString()
+    }));
+
+    console.log('Processed file data:', fileData);
+
+    // Generate unique claim number
+    const typePrefix = insurance_type.toUpperCase().substring(0, 3);
+    const claim_number = `${typePrefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
+     
+    // Calculate coverage (FIXED - no max limits)
+    const coverageDetails = calculateCoverageAmount({
+      insurance_type,
+      insurance_category,
+      claim_amount: parseFloat(claim_amount)
     });
-  });
+
+    if (coverageDetails.error) {
+      return res.status(400).json(coverageDetails);
+    }
+
+    // Enhanced fraud detection (UPDATED - no max amount checks)
+    const fraudResult = detectFraud({
+      insurance_type,
+      insurance_category,
+      claim_amount: parseFloat(claim_amount),
+      description,
+      file_count: fileData.length
+    });
+     
+    // Calculate priority
+    const priority = calculatePriority({
+      insurance_type,
+      claim_amount: parseFloat(claim_amount),
+      claim_subtype: claim_type
+    });
+
+    // Prepare additional details including file information
+    const additional_details = {
+      supporting_documents: fileData,
+      file_count: fileData.length,
+      submission_method: 'web_portal',
+      user_agent: req.get('User-Agent') || 'unknown'
+    };
+
+    console.log('Additional details:', additional_details);
+
+    // Database insertion (FIXED - proper column mapping)
+    const query = `
+      INSERT INTO claims (
+        claim_number, user_id, policy_number, insurance_type, insurance_category,
+        claim_type, incident_date, claim_amount, description, priority, 
+        fraud_score, risk_level, coverage_percentage, 
+        estimated_payout, additional_details, status
+      ) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `;
+
+    const queryParams = [
+      claim_number, 
+      userId, 
+      policy_number || null, 
+      insurance_type, 
+      insurance_category,
+      db_claim_type, 
+      incident_date, 
+      parseFloat(claim_amount), 
+      description, 
+      priority,
+      fraudResult.fraudScore, 
+      fraudResult.riskLevel, 
+      coverageDetails.coverage_percentage,
+      coverageDetails.covered_amount,
+      JSON.stringify(additional_details)
+    ];
+
+    console.log('Executing query with params:', queryParams);
+
+    db.query(query, queryParams, (err, result) => {
+      if (err) {
+        console.error('Database insertion error:', err);
+        return res.status(500).json({ 
+          error: 'Database error occurred',
+          details: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        });
+      }
+
+      console.log('Claim inserted successfully with ID:', result.insertId);
+       
+      // Success response (UPDATED - no policy maximum references)
+      res.status(201).json({
+        success: true,
+        message: 'Claim submitted successfully',
+        data: {
+          claim_id: result.insertId,
+          claim_number,
+          priority,
+          uploaded_files: {
+            count: fileData.length,
+            files: fileData.map(f => ({
+              name: f.original_name,
+              size: f.size,
+              type: f.mimetype
+            }))
+          },
+          fraud_assessment: {
+            score: fraudResult.fraudScore,
+            risk_level: fraudResult.riskLevel
+          },
+          coverage_details: coverageDetails,
+          estimated_processing_time: priority === 'urgent' ? '24 hours' : 
+                                   priority === 'high' ? '48 hours' : '72 hours'
+        }
+      });
+    });
+
+  } catch (error) {
+    console.error('Unexpected error in submitClaim:', error);
+    res.status(500).json({
+      error: 'An unexpected error occurred',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
 };
 
 // Get user's own claims
@@ -468,6 +610,7 @@ exports.updateClientClaim = (req, res) => {
 };
 
 // Cancel claim (client can cancel only pending claims)
+// Cancel claim (client can cancel only pending claims)
 exports.cancelClaim = (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
@@ -477,13 +620,19 @@ exports.cancelClaim = (req, res) => {
     return res.status(400).json({ error: 'User ID is required' });
   }
 
+  // Option A: Store reason in additional_details instead of separate column
   const query = `
     UPDATE claims 
-    SET status = 'cancelled', cancellation_reason = ?, updated_at = CURRENT_TIMESTAMP
+    SET status = 'cancelled', 
+        additional_details = JSON_SET(
+          COALESCE(additional_details, '{}'), 
+          '$.cancellation_reason', ?
+        ),
+        updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ? AND status = 'pending'
   `;
 
-  db.query(query, [reason, id, user_id], (err, result) => {
+  db.query(query, [reason || 'No reason provided', id, user_id], (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
     
     if (result.affectedRows === 0) {
@@ -498,7 +647,6 @@ exports.cancelClaim = (req, res) => {
     });
   });
 };
-
 // Upload documents for a claim
 exports.uploadClaimDocuments = (req, res) => {
   const { claim_id, document_type, file_path, file_name } = req.body;
@@ -669,7 +817,7 @@ exports.getInsuranceTypeConfig = (req, res) => {
   res.json(INSURANCE_CONFIG[type]);
 };
 
-// Calculate coverage for a potential claim (quote)
+// Calculate coverage for a potential claim (quote) - FIXED
 exports.calculateCoverageQuote = (req, res) => {
   const { insurance_type, insurance_category, claim_amount } = req.body;
   
@@ -710,9 +858,58 @@ exports.getUserClaimsSummary = (req, res) => {
     GROUP BY insurance_type
   `;
 
+  queryParams.push(parseInt(limit), parseInt(offset));
+
+  db.query(query, queryParams, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM claims c ${whereClause}`;
+    const countParams = queryParams.slice(0, -2);
+
+    db.query(countQuery, countParams, (countErr, countResults) => {
+      if (countErr) return res.status(500).json({ error: countErr.message });
+
+      res.json({
+        claims: results,
+        pagination: {
+          current_page: parseInt(page),
+          total_pages: Math.ceil(countResults[0].total / limit),
+          total_records: countResults[0].total,
+          per_page: parseInt(limit)
+        }
+      });
+    });
+  });
+};
+
+// Get user's claim summary/statistics
+exports.getUserClaimsSummary = (req, res) => {
+  const user_id = req.user?.id || req.params.user_id || req.query.user_id;
+  
+  if (!user_id) {
+    return res.status(400).json({ error: 'User ID is required' });
+  }
+
+  const query = `
+    SELECT 
+      COUNT(*) as total_claims,
+      COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_claims,
+      COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_claims,
+      COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_claims,
+      COUNT(CASE WHEN status = 'under_review' THEN 1 END) as under_review_claims,
+      SUM(claim_amount) as total_claimed_amount,
+      SUM(CASE WHEN status = 'approved' THEN COALESCE(payout_amount, 0) ELSE 0 END) as total_received,
+      insurance_type,
+      COUNT(*) as claims_by_type
+    FROM claims 
+    WHERE user_id = ? AND status != 'deleted'
+    GROUP BY insurance_type
+  `;
+
   db.query(query, [user_id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    
+
     // Also get overall summary
     const summaryQuery = `
       SELECT 
@@ -739,7 +936,7 @@ exports.getUserClaimsSummary = (req, res) => {
 };
 
 // ============================================================================
-// ANALYTICS METHODS (from original controller)
+// ANALYTICS METHODS (UPDATED - NO MAX AMOUNT REFERENCES)
 // ============================================================================
 
 // Get claims statistics by insurance type

@@ -114,6 +114,7 @@ app.use('/api/communication', communicationRoutes);
 app.use('/api/groups', require('./routes/group'));
 app.use('/api/claims', claimRoutes);
 app.use('/api/policies', require('./routes/policy'));
+app.use('/api/', require('./routes/AI'));
 app.use('/api/notifications', require('./routes/Notifications'));
 
 

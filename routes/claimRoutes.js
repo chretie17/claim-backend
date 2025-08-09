@@ -5,6 +5,141 @@ const router = express.Router();
 const clientClaimsController = require('../controllers/ClientsCLaimsController');
 const adminClaimsController = require('../controllers/AdminClaimzController');
 
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/claims/') // Make sure this directory exists
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB per file
+    files: 5 // Maximum 5 files
+  },
+  fileFilter: function (req, file, cb) {
+    // Accept images and PDFs
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and PDF files are allowed!'), false);
+    }
+  }
+});
+
+router.get('/documents/:filename/view', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  console.log('Attempting to serve file:', filePath);
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  // Get file stats to set proper headers
+  const stat = fs.statSync(filePath);
+  const fileExtension = path.extname(filename).toLowerCase();
+  
+  // Set appropriate content type based on file extension
+  let contentType = 'application/octet-stream'; // default
+  
+  if (fileExtension === '.pdf') {
+    contentType = 'application/pdf';
+  } else if (['.jpg', '.jpeg'].includes(fileExtension)) {
+    contentType = 'image/jpeg';
+  } else if (fileExtension === '.png') {
+    contentType = 'image/png';
+  } else if (fileExtension === '.gif') {
+    contentType = 'image/gif';
+  } else if (fileExtension === '.webp') {
+    contentType = 'image/webp';
+  }
+  
+  // Set headers for inline viewing
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', stat.size);
+  res.setHeader('Content-Disposition', 'inline'); // Display in browser instead of download
+  
+  // Stream the file
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+  
+  fileStream.on('error', (error) => {
+    console.error('Error streaming file:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error serving file' });
+    }
+  });
+});
+
+// Download document
+router.get('/documents/:filename/download', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  console.log('Attempting to download file:', filePath);
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  // Get original filename from the database or construct it
+  // For now, we'll extract it from the filename pattern
+  const originalName = filename.includes('-') ? 
+    filename.split('-').slice(2).join('-') : filename;
+  
+  // Set headers for download
+  res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  
+  // Stream the file
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+  
+  fileStream.on('error', (error) => {
+    console.error('Error downloading file:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error downloading file' });
+    }
+  });
+});
+
+// Get document metadata (optional - for security/access control)
+router.get('/documents/:filename/info', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  
+  const stat = fs.statSync(filePath);
+  const fileExtension = path.extname(filename).toLowerCase();
+  
+  res.json({
+    filename: filename,
+    size: stat.size,
+    extension: fileExtension,
+    created: stat.birthtime,
+    modified: stat.mtime,
+    exists: true
+  });
+});
+
+// Update your route to handle file uploads
 // ============================================================================
 // PUBLIC ROUTES - Insurance Configuration
 // ============================================================================
@@ -23,7 +158,7 @@ router.post('/quote', clientClaimsController.calculateCoverageQuote);
 // ============================================================================
 
 // Submit new claim
-router.post('/submit', clientClaimsController.submitClaim);
+router.post('/submit', upload.array('supporting_documents', 5), clientClaimsController.submitClaim);
 
 // Get user's own claims
 router.get('/my-claims', clientClaimsController.getUserClaims);
