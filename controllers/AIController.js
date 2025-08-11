@@ -839,15 +839,15 @@ async function analyzeTimePatterns(claim) {
 async function analyzeAmountPatterns(claim) {
   try {
     const query = `
-      SELECT 
-        ROUND(claim_amount/1000)*1000 as amount_range,
-        COUNT(*) as frequency,
-        AVG(fraud_score) as avg_fraud_score
-      FROM claims 
-      WHERE user_id = ? AND id != ?
-      GROUP BY ROUND(claim_amount/1000)
-      HAVING frequency > 1
-      ORDER BY frequency DESC
+     SELECT 
+  ROUND(claim_amount/1000)*1000 as amount_range,
+  COUNT(*) as frequency,
+  AVG(fraud_score) as avg_fraud_score
+FROM claims 
+WHERE user_id = ? AND id != ?
+GROUP BY ROUND(claim_amount/1000)*1000
+HAVING frequency > 1
+ORDER BY frequency DESC
     `;
     
     const [results] = await db.promise().query(query, [claim.user_id, claim.id]);
@@ -869,7 +869,7 @@ async function analyzeAmountPatterns(claim) {
 async function getClaimDocuments(claimId) {
   try {
     const query = `
-      SELECT id, file_name, file_path, file_type as type, uploaded_at
+      SELECT id, file_name, file_path, document_type as type, uploaded_at
       FROM claim_documents 
       WHERE claim_id = ?
     `;
@@ -881,6 +881,7 @@ async function getClaimDocuments(claimId) {
     return [];
   }
 }
+
 
 async function verifyDocument(doc) {
   // Mock document verification - in real implementation would use AI/ML services
