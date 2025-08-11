@@ -9,10 +9,24 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Configure multer for file uploads
+// UPDATED: Configure multer for file uploads with identification support
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/claims/') // Make sure this directory exists
+    let uploadDir = 'uploads/';
+    
+    // Create separate folders for different document types
+    if (file.fieldname.startsWith('identification_')) {
+      uploadDir += 'identification/';
+    } else {
+      uploadDir += 'claims/';
+    }
+    
+    // Ensure directory exists
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     // Generate unique filename
@@ -25,7 +39,7 @@ const upload = multer({
   storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB per file
-    files: 5 // Maximum 5 files
+    files: 10 // Maximum 10 files total (5 claim docs + 5 identification docs)
   },
   fileFilter: function (req, file, cb) {
     // Accept images and PDFs
@@ -37,9 +51,16 @@ const upload = multer({
   }
 });
 
+// UPDATED: Document viewing to handle both claim and identification documents
 router.get('/documents/:filename/view', (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  // Check both directories for the file
+  let filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  if (!fs.existsSync(filePath)) {
+    filePath = path.join(__dirname, '../uploads/identification', filename);
+  }
   
   console.log('Attempting to serve file:', filePath);
   
@@ -84,10 +105,16 @@ router.get('/documents/:filename/view', (req, res) => {
   });
 });
 
-// Download document
+// UPDATED: Download document to handle both directories
 router.get('/documents/:filename/download', (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  // Check both directories for the file
+  let filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  if (!fs.existsSync(filePath)) {
+    filePath = path.join(__dirname, '../uploads/identification', filename);
+  }
   
   console.log('Attempting to download file:', filePath);
   
@@ -117,10 +144,18 @@ router.get('/documents/:filename/download', (req, res) => {
   });
 });
 
-// Get document metadata (optional - for security/access control)
+// UPDATED: Get document metadata for both directories
 router.get('/documents/:filename/info', (req, res) => {
   const filename = req.params.filename;
-  const filePath = path.join(__dirname, '../uploads/claims', filename);
+  
+  // Check both directories for the file
+  let filePath = path.join(__dirname, '../uploads/claims', filename);
+  let documentType = 'claim';
+  
+  if (!fs.existsSync(filePath)) {
+    filePath = path.join(__dirname, '../uploads/identification', filename);
+    documentType = 'identification';
+  }
   
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
@@ -131,6 +166,7 @@ router.get('/documents/:filename/info', (req, res) => {
   
   res.json({
     filename: filename,
+    document_type: documentType,
     size: stat.size,
     extension: fileExtension,
     created: stat.birthtime,
@@ -139,7 +175,6 @@ router.get('/documents/:filename/info', (req, res) => {
   });
 });
 
-// Update your route to handle file uploads
 // ============================================================================
 // PUBLIC ROUTES - Insurance Configuration
 // ============================================================================
@@ -153,12 +188,18 @@ router.get('/config/:type', clientClaimsController.getInsuranceTypeConfig);
 // Calculate coverage quote
 router.post('/quote', clientClaimsController.calculateCoverageQuote);
 
+// NEW: Get identification requirements for all insurance types
+router.get('/identification-requirements', clientClaimsController.getAllIdentificationRequirements);
+
+// NEW: Get identification requirements for specific insurance type
+router.get('/identification-requirements/:type', clientClaimsController.getIdentificationRequirements);
+
 // ============================================================================
 // CLIENT ROUTES - Claim Management (No Authentication Required)
 // ============================================================================
 
-// Submit new claim
-router.post('/submit', upload.array('supporting_documents', 5), clientClaimsController.submitClaim);
+// UPDATED: Submit new claim with identification document support
+router.post('/submit', upload.any(), clientClaimsController.submitClaim);
 
 // Get user's own claims
 router.get('/my-claims', clientClaimsController.getUserClaims);

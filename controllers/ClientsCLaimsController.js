@@ -223,46 +223,143 @@ const calculateCoverageAmount = (claimData) => {
 // ============================================================================
 // MAIN SUBMIT CLAIM FUNCTION WITH FILE UPLOAD SUPPORT
 // ============================================================================
+// ============================================================================
+// IDENTIFICATION REQUIREMENTS BY INSURANCE TYPE
+// ============================================================================
+
+const IDENTIFICATION_REQUIREMENTS = {
+  motor: {
+    required_fields: ['license_plate'],
+    required_documents: ['vehicle_registration', 'insurance_policy'],
+    fields: {
+      license_plate: {
+        label: 'Vehicle License Plate Number',
+        type: 'text',
+        pattern: '^R[A-Z]{2}\\s?\\d{3}[A-Z]$', // Rwanda plate format
+        placeholder: 'e.g., RAA 123A'
+      }
+    },
+    documents: {
+      vehicle_registration: {
+        label: 'Vehicle Registration Document',
+        description: 'Upload clear photo of vehicle registration card',
+        accept: 'image/*,.pdf'
+      },
+      insurance_policy: {
+        label: 'Insurance Policy Document',
+        description: 'Upload your current insurance policy document',
+        accept: 'image/*,.pdf'
+      }
+    }
+  },
+  property: {
+    required_fields: ['upi_number'],
+    required_documents: ['property_title', 'insurance_policy'],
+    fields: {
+      upi_number: {
+        label: 'Unique Parcel Identifier (UPI)',
+        type: 'text',
+       pattern: '^\\d{1}/\\d{2}/\\d{2}/\\d{2}/\\d+$',
+        placeholder: 'e.g., 1/03/01/04/30'
+      }
+    },
+    documents: {
+      property_title: {
+        label: 'Property Title/Deed Document',
+        description: 'Upload property ownership document',
+        accept: 'image/*,.pdf'
+      },
+      insurance_policy: {
+        label: 'Property Insurance Policy',
+        description: 'Upload your property insurance policy',
+        accept: 'image/*,.pdf'
+      }
+    }
+  },
+  health: {
+    required_fields: ['hospital_clinic'],
+    required_documents: ['medical_records'],
+    fields: {
+      hospital_clinic: {
+        label: 'Hospital/Clinic Name',
+        type: 'text',
+        placeholder: 'Enter hospital or clinic name where treatment occurred'
+      }
+    },
+    documents: {
+      medical_records: {
+        label: 'Medical Records/Documents',
+        description: 'Upload medical reports, prescriptions, or treatment records',
+        accept: 'image/*,.pdf'
+      }
+    }
+  },
+  life: {
+    required_fields: ['beneficiary_name', 'beneficiary_relationship', 'beneficiary_id'],
+    required_documents: ['supporting_documents'],
+    fields: {
+      beneficiary_name: {
+        label: 'Beneficiary Full Name',
+        type: 'text',
+        placeholder: 'Enter beneficiary full name'
+      },
+      beneficiary_relationship: {
+        label: 'Relationship to Beneficiary',
+        type: 'select',
+        options: ['Spouse', 'Child', 'Parent', 'Sibling', 'Other Family Member', 'Other']
+      },
+      beneficiary_id: {
+        label: 'Beneficiary National ID',
+        type: 'text',
+        pattern: '^\\d{16}$', // Rwanda National ID format
+        placeholder: 'Enter 16-digit National ID'
+      }
+    },
+    documents: {
+      supporting_documents: {
+        label: 'Supporting Documents',
+        description: 'Upload death certificate, medical reports, or other relevant documents',
+        accept: 'image/*,.pdf'
+      }
+    }
+  }
+};
 
 exports.submitClaim = async (req, res) => {
   console.log('=== CLAIM SUBMISSION DEBUG ===');
   console.log('Request body:', req.body);
   console.log('Uploaded files:', req.files);
-  console.log('File count:', req.files ? req.files.length : 0);
   
   try {
-    // Extract data from FormData (when files are uploaded) or JSON
+    // Extract data from FormData
     const {
-      policy_number, // Optional
+      policy_number,
       insurance_type,
       insurance_category,
       claim_type,
       incident_date,
       claim_amount,
       description,
-      user_id
+      user_id,
+      // NEW: Identification data
+      identification_data // This will be JSON string from frontend
     } = req.body;
 
-    // Handle uploaded files
+    // Handle uploaded files - separate claim documents from identification documents
     const uploadedFiles = req.files || [];
     
-    // Debug logging
-    console.log('Extracted user_id:', user_id);
-    console.log('Insurance type:', insurance_type);
-    console.log('Files received:', uploadedFiles.length);
+    // Separate files by type (based on fieldname from multer)
+    const claimDocuments = uploadedFiles.filter(file => file.fieldname === 'supporting_documents');
+    const identificationDocuments = uploadedFiles.filter(file => file.fieldname.startsWith('identification_'));
+
+    console.log('Claim documents:', claimDocuments.length);
+    console.log('Identification documents:', identificationDocuments.length);
 
     // Validation - User ID
     if (!user_id) {
-      return res.status(400).json({ 
-        error: 'User ID is required',
-        debug: {
-          body: req.body,
-          files: req.files ? req.files.length : 0
-        }
-      });
+      return res.status(400).json({ error: 'User ID is required' });
     }
 
-    // Convert user_id to number if it's a string
     const userId = parseInt(user_id);
     if (isNaN(userId)) {
       return res.status(400).json({ error: 'User ID must be a valid number' });
@@ -271,17 +368,43 @@ exports.submitClaim = async (req, res) => {
     // Validate required fields
     if (!insurance_type || !insurance_category || !claim_type ||
         !incident_date || !claim_amount || !description) {
-      return res.status(400).json({ 
-        error: 'All required fields must be provided',
-        missing_fields: {
-          insurance_type: !insurance_type,
-          insurance_category: !insurance_category,
-          claim_type: !claim_type,
-          incident_date: !incident_date,
-          claim_amount: !claim_amount,
-          description: !description
+      return res.status(400).json({ error: 'All required fields must be provided' });
+    }
+
+    // NEW: Validate identification data
+    let parsedIdentificationData = {};
+    if (identification_data) {
+      try {
+        parsedIdentificationData = JSON.parse(identification_data);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid identification data format' });
+      }
+    }
+
+    // Validate identification requirements
+    const idRequirements = IDENTIFICATION_REQUIREMENTS[insurance_type];
+    if (idRequirements) {
+      // Check required fields
+      for (const field of idRequirements.required_fields) {
+        if (!parsedIdentificationData[field]) {
+          return res.status(400).json({ 
+            error: `${idRequirements.fields[field].label} is required for ${insurance_type} insurance` 
+          });
         }
-      });
+      }
+
+      // Validate field formats
+      for (const [field, value] of Object.entries(parsedIdentificationData)) {
+        const fieldConfig = idRequirements.fields[field];
+        if (fieldConfig && fieldConfig.pattern) {
+          const regex = new RegExp(fieldConfig.pattern);
+          if (!regex.test(value)) {
+            return res.status(400).json({ 
+              error: `Invalid format for ${fieldConfig.label}` 
+            });
+          }
+        }
+      }
     }
 
     // Validate insurance configuration
@@ -309,7 +432,7 @@ exports.submitClaim = async (req, res) => {
       });
     }
 
-    // Map claim types to database enum values
+    // Map claim types to database enum values (keep existing mapping)
     const CLAIM_TYPE_MAPPING = {
       'accident': 'auto',
       'collision': 'auto', 
@@ -342,14 +465,11 @@ exports.submitClaim = async (req, res) => {
       'medical_emergency': 'travel'
     };
 
-    // Map the claim type to database enum value
     const db_claim_type = CLAIM_TYPE_MAPPING[claim_type] || 
       (insurance_type === 'motor' ? 'auto' : insurance_type);
 
-    console.log('Mapped claim type:', claim_type, '->', db_claim_type);
-
     // Process uploaded files
-    const fileData = uploadedFiles.map(file => ({
+    const claimFileData = claimDocuments.map(file => ({
       filename: file.filename,
       original_name: file.originalname,
       mimetype: file.mimetype,
@@ -358,13 +478,24 @@ exports.submitClaim = async (req, res) => {
       uploaded_at: new Date().toISOString()
     }));
 
-    console.log('Processed file data:', fileData);
+    // NEW: Process identification documents
+    const identificationFileData = identificationDocuments.map(file => ({
+      document_type: file.fieldname.replace('identification_', ''),
+      filename: file.filename,
+      original_name: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      path: file.path,
+      uploaded_at: new Date().toISOString()
+    }));
+
+    console.log('Processed identification files:', identificationFileData);
 
     // Generate unique claim number
     const typePrefix = insurance_type.toUpperCase().substring(0, 3);
     const claim_number = `${typePrefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
      
-    // Calculate coverage (FIXED - no max limits)
+    // Calculate coverage
     const coverageDetails = calculateCoverageAmount({
       insurance_type,
       insurance_category,
@@ -375,13 +506,15 @@ exports.submitClaim = async (req, res) => {
       return res.status(400).json(coverageDetails);
     }
 
-    // Enhanced fraud detection (UPDATED - no max amount checks)
+    // Enhanced fraud detection
     const fraudResult = detectFraud({
       insurance_type,
       insurance_category,
       claim_amount: parseFloat(claim_amount),
       description,
-      file_count: fileData.length
+      file_count: claimFileData.length,
+      identification_provided: Object.keys(parsedIdentificationData).length > 0,
+      identification_documents_count: identificationFileData.length
     });
      
     // Calculate priority
@@ -393,23 +526,21 @@ exports.submitClaim = async (req, res) => {
 
     // Prepare additional details including file information
     const additional_details = {
-      supporting_documents: fileData,
-      file_count: fileData.length,
+      supporting_documents: claimFileData,
+      file_count: claimFileData.length,
       submission_method: 'web_portal',
       user_agent: req.get('User-Agent') || 'unknown'
     };
 
-    console.log('Additional details:', additional_details);
-
-    // Database insertion (FIXED - proper column mapping)
+    // NEW: Database insertion with identification data
     const query = `
       INSERT INTO claims (
         claim_number, user_id, policy_number, insurance_type, insurance_category,
         claim_type, incident_date, claim_amount, description, priority, 
         fraud_score, risk_level, coverage_percentage, 
-        estimated_payout, additional_details, status
+        estimated_payout, additional_details, identification_data, identification_documents, status
       ) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `;
 
     const queryParams = [
@@ -427,7 +558,9 @@ exports.submitClaim = async (req, res) => {
       fraudResult.riskLevel, 
       coverageDetails.coverage_percentage,
       coverageDetails.covered_amount,
-      JSON.stringify(additional_details)
+      JSON.stringify(additional_details),
+      JSON.stringify(parsedIdentificationData), // NEW
+      JSON.stringify(identificationFileData)    // NEW
     ];
 
     console.log('Executing query with params:', queryParams);
@@ -443,7 +576,7 @@ exports.submitClaim = async (req, res) => {
 
       console.log('Claim inserted successfully with ID:', result.insertId);
        
-      // Success response (UPDATED - no policy maximum references)
+      // Success response
       res.status(201).json({
         success: true,
         message: 'Claim submitted successfully',
@@ -452,11 +585,19 @@ exports.submitClaim = async (req, res) => {
           claim_number,
           priority,
           uploaded_files: {
-            count: fileData.length,
-            files: fileData.map(f => ({
+            count: claimFileData.length,
+            files: claimFileData.map(f => ({
               name: f.original_name,
               size: f.size,
               type: f.mimetype
+            }))
+          },
+          identification_files: {
+            count: identificationFileData.length,
+            files: identificationFileData.map(f => ({
+              type: f.document_type,
+              name: f.original_name,
+              size: f.size
             }))
           },
           fraud_assessment: {
@@ -477,6 +618,21 @@ exports.submitClaim = async (req, res) => {
       details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
+};
+// Get identification requirements for insurance type
+exports.getIdentificationRequirements = (req, res) => {
+  const { type } = req.params;
+  
+  if (!IDENTIFICATION_REQUIREMENTS[type]) {
+    return res.status(404).json({ error: 'Insurance type not found' });
+  }
+  
+  res.json(IDENTIFICATION_REQUIREMENTS[type]);
+};
+
+// Get all identification requirements
+exports.getAllIdentificationRequirements = (req, res) => {
+  res.json(IDENTIFICATION_REQUIREMENTS);
 };
 
 // Get user's own claims
