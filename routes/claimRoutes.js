@@ -270,5 +270,32 @@ router.get('/admin/analytics/fraud-summary', adminClaimsController.getFraudSumma
 
 // Fraud analysis by insurance type (from original controller)  
 router.get('/admin/analytics/fraud-by-type', clientClaimsController.getFraudAnalysisByType);
+// ============================================================================
+// ADMIN IDENTITY VERIFICATION ROUTES
+// ============================================================================
+
+/**
+ * @route   GET /api/admin/claims/:id/identity
+ * @desc    Get identification data for a specific claim
+ */
+router.get('/admin/claims/:id/identity', adminClaimsController.getClaimIdentityData);
+
+/**
+ * @route   POST /api/admin/claims/:id/verify-identity
+ * @desc    Verify or reject identity documents for a claim
+ */
+router.post('/admin/claims/:id/verify-identity', adminClaimsController.verifyIdentity);
+
+/**
+ * @route   GET /api/admin/claims/identity/pending
+ * @desc    Get all claims that need identity verification
+ */
+router.get('/admin/claims/identity/pending', adminClaimsController.getClaimsNeedingIdentityCheck);
+
+/**
+ * @route   GET /api/admin/claims/identity/stats
+ * @desc    Get identity verification statistics
+ */
+router.get('/admin/claims/identity/stats', adminClaimsController.getIdentityStats);
 
 module.exports = router;

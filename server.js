@@ -8,10 +8,10 @@ const db = require('./config/db');
 const userRoutes = require('./routes/userRoutes');
 const CommunitySkillsRoutes = require('./routes/Communit&Skills');
 const AdminPostRoutes = require('./routes/AdminPost');
-const ReportRoutes = require('./routes/Reports');
 const dashboardRoutes = require('./routes/DashboardRoutes');
 const communicationRoutes = require('./routes/communication');
 const claimRoutes = require('./routes/claimRoutes');
+const ReportRoutes = require('./routes/Reports');
 
 const app = express();
 const server = http.createServer(app);

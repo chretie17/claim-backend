@@ -965,5 +965,327 @@ async function logAIAction(claimId, recommendationId, action, adminId) {
     console.error('Failed to log AI action:', error);
   }
 }
+// ============================================================================
+// AI IDENTITY ANALYSIS FUNCTIONS (SIMPLE VERSION)
+// ============================================================================
+
+// Analyze identity documents for a claim
+exports.analyzeIdentityDocuments = async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Get claim with identity data
+    const query = `
+      SELECT c.identification_data, c.identification_documents, c.insurance_type,
+             u.name as user_name, u.email as user_email
+      FROM claims c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.id = ?
+    `;
+    
+    const [results] = await db.promise().query(query, [id]);
+    
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Claim not found' });
+    }
+    
+    const claim = results[0];
+    
+    // Simple AI analysis
+    const analysis = await performSimpleIdentityAnalysis(claim);
+    
+    // Save analysis results
+    await saveIdentityAnalysis(id, analysis);
+    
+    res.json({
+      claim_id: id,
+      analysis_date: new Date().toISOString(),
+      ...analysis
+    });
+    
+  } catch (error) {
+    console.error('Identity Analysis Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to analyze identity documents',
+      details: error.message 
+    });
+  }
+};
+
+// Get identity analysis results
+exports.getIdentityAnalysis = (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT analysis_data, created_at
+    FROM identity_analysis
+    WHERE claim_id = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  
+  db.query(query, [id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'No analysis found for this claim' });
+    }
+    
+    const analysis = JSON.parse(results[0].analysis_data);
+    
+    res.json({
+      claim_id: id,
+      analysis_date: results[0].created_at,
+      ...analysis
+    });
+  });
+};
+
+// Bulk identity analysis for multiple claims
+exports.bulkAnalyzeIdentity = async (req, res) => {
+  const { claim_ids } = req.body;
+  
+  if (!claim_ids || !Array.isArray(claim_ids)) {
+    return res.status(400).json({ error: 'claim_ids array is required' });
+  }
+  
+  try {
+    const results = [];
+    
+    for (const claimId of claim_ids) {
+      try {
+        const query = `
+          SELECT c.identification_data, c.identification_documents, c.insurance_type
+          FROM claims c
+          WHERE c.id = ?
+        `;
+        
+        const [claimResults] = await db.promise().query(query, [claimId]);
+        
+        if (claimResults.length > 0) {
+          const analysis = await performSimpleIdentityAnalysis(claimResults[0]);
+          await saveIdentityAnalysis(claimId, analysis);
+          
+          results.push({
+            claim_id: claimId,
+            status: 'analyzed',
+            risk_score: analysis.risk_score,
+            recommendation: analysis.recommendation
+          });
+        } else {
+          results.push({
+            claim_id: claimId,
+            status: 'not_found'
+          });
+        }
+      } catch (error) {
+        results.push({
+          claim_id: claimId,
+          status: 'error',
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      message: 'Bulk identity analysis completed',
+      results: results,
+      analyzed_count: results.filter(r => r.status === 'analyzed').length
+    });
+    
+  } catch (error) {
+    console.error('Bulk Identity Analysis Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to perform bulk analysis',
+      details: error.message 
+    });
+  }
+};
+
+// ============================================================================
+// SIMPLE AI HELPER FUNCTIONS
+// ============================================================================
+
+async function performSimpleIdentityAnalysis(claim) {
+  const analysis = {
+    risk_score: 0,
+    confidence_level: 'medium',
+    recommendation: 'manual_review',
+    issues_found: [],
+    positive_indicators: []
+  };
+  
+  // Parse identity data
+  const identityData = claim.identification_data ? 
+    JSON.parse(claim.identification_data) : {};
+  
+  const identityDocs = claim.identification_documents ? 
+    JSON.parse(claim.identification_documents) : [];
+  
+  // Simple checks based on insurance type
+  if (claim.insurance_type === 'motor') {
+    analysis = analyzeMotorIdentity(identityData, identityDocs, analysis);
+  } else if (claim.insurance_type === 'property') {
+    analysis = analyzePropertyIdentity(identityData, identityDocs, analysis);
+  } else if (claim.insurance_type === 'health') {
+    analysis = analyzeHealthIdentity(identityData, identityDocs, analysis);
+  } else if (claim.insurance_type === 'life') {
+    analysis = analyzeLifeIdentity(identityData, identityDocs, analysis);
+  }
+  
+  // Calculate final recommendation
+  if (analysis.risk_score < 0.3) {
+    analysis.recommendation = 'approve';
+    analysis.confidence_level = 'high';
+  } else if (analysis.risk_score > 0.7) {
+    analysis.recommendation = 'reject';
+    analysis.confidence_level = 'high';
+  } else {
+    analysis.recommendation = 'manual_review';
+    analysis.confidence_level = 'medium';
+  }
+  
+  return analysis;
+}
+
+function analyzeMotorIdentity(identityData, identityDocs, analysis) {
+  // Check license plate format
+  if (identityData.license_plate) {
+    const platePattern = /^R[A-Z]{2}\s?\d{3}[A-Z]$/;
+    if (platePattern.test(identityData.license_plate)) {
+      analysis.positive_indicators.push('Valid license plate format');
+    } else {
+      analysis.issues_found.push('Invalid license plate format');
+      analysis.risk_score += 0.3;
+    }
+  } else {
+    analysis.issues_found.push('Missing license plate number');
+    analysis.risk_score += 0.5;
+  }
+  
+  // Check required documents
+  const requiredDocs = ['vehicle_registration', 'insurance_policy'];
+  const providedDocTypes = identityDocs.map(doc => doc.document_type);
+  
+  requiredDocs.forEach(reqDoc => {
+    if (providedDocTypes.includes(reqDoc)) {
+      analysis.positive_indicators.push(`${reqDoc} document provided`);
+    } else {
+      analysis.issues_found.push(`Missing ${reqDoc} document`);
+      analysis.risk_score += 0.2;
+    }
+  });
+  
+  return analysis;
+}
+
+function analyzePropertyIdentity(identityData, identityDocs, analysis) {
+  // Check UPI number format
+  if (identityData.upi_number) {
+    const upiPattern = /^\d{1}\/\d{2}\/\d{2}\/\d{2}\/\d+$/;
+    if (upiPattern.test(identityData.upi_number)) {
+      analysis.positive_indicators.push('Valid UPI number format');
+    } else {
+      analysis.issues_found.push('Invalid UPI number format');
+      analysis.risk_score += 0.3;
+    }
+  } else {
+    analysis.issues_found.push('Missing UPI number');
+    analysis.risk_score += 0.5;
+  }
+  
+  // Check required documents
+  const requiredDocs = ['property_title', 'insurance_policy'];
+  const providedDocTypes = identityDocs.map(doc => doc.document_type);
+  
+  requiredDocs.forEach(reqDoc => {
+    if (providedDocTypes.includes(reqDoc)) {
+      analysis.positive_indicators.push(`${reqDoc} document provided`);
+    } else {
+      analysis.issues_found.push(`Missing ${reqDoc} document`);
+      analysis.risk_score += 0.2;
+    }
+  });
+  
+  return analysis;
+}
+
+function analyzeHealthIdentity(identityData, identityDocs, analysis) {
+  // Check hospital/clinic name
+  if (identityData.hospital_clinic && identityData.hospital_clinic.length > 5) {
+    analysis.positive_indicators.push('Hospital/clinic name provided');
+  } else {
+    analysis.issues_found.push('Missing or invalid hospital/clinic name');
+    analysis.risk_score += 0.3;
+  }
+  
+  // Check medical records
+  const providedDocTypes = identityDocs.map(doc => doc.document_type);
+  if (providedDocTypes.includes('medical_records')) {
+    analysis.positive_indicators.push('Medical records provided');
+  } else {
+    analysis.issues_found.push('Missing medical records');
+    analysis.risk_score += 0.4;
+  }
+  
+  return analysis;
+}
+
+function analyzeLifeIdentity(identityData, identityDocs, analysis) {
+  // Check beneficiary information
+  if (identityData.beneficiary_name && identityData.beneficiary_name.length > 2) {
+    analysis.positive_indicators.push('Beneficiary name provided');
+  } else {
+    analysis.issues_found.push('Missing beneficiary name');
+    analysis.risk_score += 0.2;
+  }
+  
+  if (identityData.beneficiary_id) {
+    const idPattern = /^\d{16}$/;
+    if (idPattern.test(identityData.beneficiary_id)) {
+      analysis.positive_indicators.push('Valid beneficiary ID format');
+    } else {
+      analysis.issues_found.push('Invalid beneficiary ID format');
+      analysis.risk_score += 0.3;
+    }
+  } else {
+    analysis.issues_found.push('Missing beneficiary ID');
+    analysis.risk_score += 0.3;
+  }
+  
+  // Check supporting documents
+  const providedDocTypes = identityDocs.map(doc => doc.document_type);
+  if (providedDocTypes.includes('supporting_documents')) {
+    analysis.positive_indicators.push('Supporting documents provided');
+  } else {
+    analysis.issues_found.push('Missing supporting documents');
+    analysis.risk_score += 0.2;
+  }
+  
+  return analysis;
+}
+
+async function saveIdentityAnalysis(claimId, analysis) {
+  const query = `
+    INSERT INTO identity_analysis (claim_id, analysis_data, risk_score, recommendation, created_at)
+    VALUES (?, ?, ?, ?, NOW())
+    ON DUPLICATE KEY UPDATE 
+    analysis_data = VALUES(analysis_data),
+    risk_score = VALUES(risk_score),
+    recommendation = VALUES(recommendation),
+    created_at = NOW()
+  `;
+  
+  try {
+    await db.promise().query(query, [
+      claimId,
+      JSON.stringify(analysis),
+      analysis.risk_score,
+      analysis.recommendation
+    ]);
+  } catch (error) {
+    console.error('Failed to save identity analysis:', error);
+  }
+}
 // Export the functions
 module.exports = exports;

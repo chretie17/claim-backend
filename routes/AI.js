@@ -24,6 +24,104 @@ router.post('/ai-analysis/:id/action', aiAnalysisController.executeAIRecommendat
  */
 router.get('/ai-analysis/:id/history', aiAnalysisController.getAnalysisHistory);
 
+
+/**
+ * @route   POST /api/claims/ai-identity/:id
+ * @desc    Perform AI analysis on identity documents for a claim
+ */
+router.post('/ai-identity/:id', aiAnalysisController.analyzeIdentityDocuments);
+
+/**
+ * @route   GET /api/claims/ai-identity/:id
+ * @desc    Get AI identity analysis results for a claim
+ */
+router.get('/ai-identity/:id', aiAnalysisController.getIdentityAnalysis);
+
+/**
+ * @route   POST /api/claims/ai-identity/bulk-analyze
+ * @desc    Perform bulk AI identity analysis on multiple claims
+ */
+router.post('/ai-identity/bulk-analyze', aiAnalysisController.bulkAnalyzeIdentity);
+
+/**
+ * @route   GET /api/claims/ai-identity/stats
+ * @desc    Get AI identity analysis statistics
+ */
+router.get('/ai-identity/stats', async (req, res) => {
+  const { date_from, date_to, insurance_type } = req.query;
+  
+  try {
+    const db = require('../config/db');
+    
+    let whereClause = '1=1';
+    const queryParams = [];
+    
+    if (date_from) {
+      whereClause += ' AND ia.created_at >= ?';
+      queryParams.push(date_from);
+    }
+    
+    if (date_to) {
+      whereClause += ' AND ia.created_at <= ?';
+      queryParams.push(date_to);
+    }
+    
+    if (insurance_type) {
+      whereClause += ' AND c.insurance_type = ?';
+      queryParams.push(insurance_type);
+    }
+    
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_analyses,
+        AVG(ia.risk_score) as avg_risk_score,
+        COUNT(CASE WHEN ia.recommendation = 'approve' THEN 1 END) as auto_approve,
+        COUNT(CASE WHEN ia.recommendation = 'reject' THEN 1 END) as auto_reject,
+        COUNT(CASE WHEN ia.recommendation = 'manual_review' THEN 1 END) as manual_review,
+        COUNT(CASE WHEN ia.risk_score < 0.3 THEN 1 END) as low_risk,
+        COUNT(CASE WHEN ia.risk_score >= 0.3 AND ia.risk_score < 0.7 THEN 1 END) as medium_risk,
+        COUNT(CASE WHEN ia.risk_score >= 0.7 THEN 1 END) as high_risk
+      FROM identity_analysis ia
+      JOIN claims c ON ia.claim_id = c.id
+      WHERE ${whereClause}
+    `;
+    
+    const [stats] = await db.promise().query(statsQuery, queryParams);
+    
+    // Get analysis by insurance type
+    const typeQuery = `
+      SELECT 
+        c.insurance_type,
+        COUNT(*) as count,
+        AVG(ia.risk_score) as avg_risk_score,
+        COUNT(CASE WHEN ia.recommendation = 'approve' THEN 1 END) as approve_count
+      FROM identity_analysis ia
+      JOIN claims c ON ia.claim_id = c.id
+      WHERE ${whereClause}
+      GROUP BY c.insurance_type
+    `;
+    
+    const [typeStats] = await db.promise().query(typeQuery, queryParams);
+    
+    res.json({
+      summary: stats[0],
+      by_insurance_type: typeStats,
+      parameters: {
+        date_from: date_from || null,
+        date_to: date_to || null,
+        insurance_type: insurance_type || 'all'
+      }
+    });
+    
+  } catch (error) {
+    console.error('AI Identity Stats Error:', error);
+    res.status(500).json({
+      error: 'Failed to get AI identity statistics',
+      details: error.message
+    });
+  }
+});
+
 /**
  * @route   POST /api/claims/ai-analysis/batch
  * @desc    Perform AI analysis on multiple claims

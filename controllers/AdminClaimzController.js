@@ -493,6 +493,165 @@ exports.getMyAssignedClaims = (req, res) => {
   });
 };
 
+// ============================================================================
+// ADMIN IDENTITY VERIFICATION FUNCTIONS (SIMPLE VERSION)
+// ============================================================================
+
+// Get identification data for a specific claim
+// Get identification data for a specific claim
+exports.getClaimIdentityData = (req, res) => {
+  const { id } = req.params;
+  
+  const query = `
+    SELECT c.identification_data, c.identification_documents, c.insurance_type,
+           u.name as user_name, u.email as user_email
+    FROM claims c
+    JOIN users u ON c.user_id = u.id
+    WHERE c.id = ?
+  `;
+  
+  db.query(query, [id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Claim not found' });
+    }
+    
+    const claim = results[0];
+    
+    // Safe JSON parsing function
+    const safeJsonParse = (data, defaultValue) => {
+      if (!data) return defaultValue;
+      if (typeof data === 'object') return data;
+      if (typeof data === 'string') {
+        try {
+          return JSON.parse(data);
+        } catch (error) {
+          console.error('JSON parse error:', error);
+          return defaultValue;
+        }
+      }
+      return defaultValue;
+    };
+    
+    res.json({
+      claim_id: id,
+      user_name: claim.user_name,
+      user_email: claim.user_email,
+      insurance_type: claim.insurance_type,
+      identification_data: safeJsonParse(claim.identification_data, {}),
+      identification_documents: safeJsonParse(claim.identification_documents, [])
+    });
+  });
+};
+
+// Verify identity documents - simple approve/reject
+exports.verifyIdentity = (req, res) => {
+  const { id } = req.params;
+  const { status, notes } = req.body; // status: 'verified' or 'rejected'
+  const admin_id = req.user ? req.user.id : req.body.admin_id;
+  
+  if (!['verified', 'rejected'].includes(status)) {
+    return res.status(400).json({ 
+      error: 'Status must be verified or rejected' 
+    });
+  }
+  
+  const query = `
+    UPDATE claims 
+    SET identity_status = ?,
+        identity_notes = ?,
+        identity_verified_by = ?,
+        identity_verified_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `;
+  
+  db.query(query, [status, notes, admin_id, id], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Claim not found' });
+    }
+    
+    res.json({
+      message: `Identity ${status} successfully`,
+      claim_id: id,
+      status: status
+    });
+  });
+};
+
+// Get all claims that need identity verification
+exports.getClaimsNeedingIdentityCheck = (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+  const offset = (page - 1) * limit;
+  
+  const query = `
+    SELECT c.id, c.claim_number, c.insurance_type, c.claim_amount,
+           c.created_at, u.name as user_name, u.email as user_email,
+           c.identity_status
+    FROM claims c
+    JOIN users u ON c.user_id = u.id
+    WHERE (c.identity_status IS NULL OR c.identity_status = 'pending')
+      AND c.status != 'deleted'
+    ORDER BY c.created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  
+  db.query(query, [parseInt(limit), parseInt(offset)], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total 
+      FROM claims c
+      WHERE (c.identity_status IS NULL OR c.identity_status = 'pending')
+        AND c.status != 'deleted'
+    `;
+    
+    db.query(countQuery, (countErr, countResults) => {
+      if (countErr) return res.status(500).json({ error: countErr.message });
+      
+      res.json({
+        claims: results,
+        pagination: {
+          current_page: parseInt(page),
+          total_pages: Math.ceil(countResults[0].total / limit),
+          total_records: countResults[0].total
+        }
+      });
+    });
+  });
+};
+
+// Simple identity verification statistics
+exports.getIdentityStats = (req, res) => {
+  const query = `
+    SELECT 
+      COUNT(*) as total_claims,
+      COUNT(CASE WHEN identity_status = 'verified' THEN 1 END) as verified_count,
+      COUNT(CASE WHEN identity_status = 'rejected' THEN 1 END) as rejected_count,
+      COUNT(CASE WHEN identity_status IS NULL OR identity_status = 'pending' THEN 1 END) as pending_count
+    FROM claims
+    WHERE status != 'deleted'
+  `;
+  
+  db.query(query, (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    const stats = results[0];
+    
+    res.json({
+      total_claims: stats.total_claims,
+      verified: stats.verified_count,
+      rejected: stats.rejected_count,
+      pending: stats.pending_count,
+      verification_rate: stats.total_claims > 0 ? 
+        Math.round((stats.verified_count / stats.total_claims) * 100) : 0
+    });
+  });
+};
+
 // Bulk update claims
 exports.bulkUpdateClaims = (req, res) => {
   const { claim_ids, updates } = req.body;
