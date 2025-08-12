@@ -55,43 +55,55 @@ exports.sendMessage = (req, res) => {
         attachment_size = req.file.size;
     }
     
-    const query = `INSERT INTO messages (sender_id, receiver_id, message, message_type, attachment_url, attachment_name, attachment_type, attachment_size) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    // First get the sender's name
+    const getSenderQuery = 'SELECT name FROM users WHERE id = ?';
     
-    db.query(query, [sender_id, receiver_id, message, message_type || 'direct', attachment_url, attachment_name, attachment_type, attachment_size], (err, results) => {
+    db.query(getSenderQuery, [sender_id], (err, senderResults) => {
         if (err) {
-            console.error('Error sending message:', err);
+            console.error('Error getting sender info:', err);
             return res.status(500).json({ error: err.message });
         }
         
-        // Rest of your existing sendMessage logic...
-        // But also include attachment info in the real-time message
-        if (receiver_id && req.connectedUsers.has(receiver_id.toString())) {
-            const receiverSocketId = req.connectedUsers.get(receiver_id.toString());
-            
-            req.io.to(receiverSocketId).emit('new_message', {
-                id: results.insertId,
-                sender_id: parseInt(sender_id),
-                sender_name: senderName,
-                message,
-                message_type,
-                attachment_url,
-                attachment_name,
-                attachment_type,
-                attachment_size,
-                created_at: new Date().toISOString()
-            });
-        }
+        const senderName = senderResults.length > 0 ? senderResults[0].name : 'Unknown User';
         
-        res.status(201).json({ 
-            message: 'Message sent successfully', 
-            messageId: results.insertId,
-            attachment: req.file ? {
-                url: attachment_url,
-                name: attachment_name,
-                type: attachment_type,
-                size: attachment_size
-            } : null
+        // Now insert the message
+        const query = `INSERT INTO messages (sender_id, receiver_id, message, message_type, attachment_url, attachment_name, attachment_type, attachment_size) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+        
+        db.query(query, [sender_id, receiver_id, message, message_type || 'direct', attachment_url, attachment_name, attachment_type, attachment_size], (err, results) => {
+            if (err) {
+                console.error('Error sending message:', err);
+                return res.status(500).json({ error: err.message });
+            }
+            
+            // Send real-time notification with sender name
+            if (receiver_id && req.connectedUsers && req.connectedUsers.has(receiver_id.toString())) {
+                const receiverSocketId = req.connectedUsers.get(receiver_id.toString());
+                
+                req.io.to(receiverSocketId).emit('new_message', {
+                    id: results.insertId,
+                    sender_id: parseInt(sender_id),
+                    sender_name: senderName, // Now this is defined!
+                    message,
+                    message_type,
+                    attachment_url,
+                    attachment_name,
+                    attachment_type,
+                    attachment_size,
+                    created_at: new Date().toISOString()
+                });
+            }
+            
+            res.status(201).json({ 
+                message: 'Message sent successfully', 
+                messageId: results.insertId,
+                attachment: req.file ? {
+                    url: attachment_url,
+                    name: attachment_name,
+                    type: attachment_type,
+                    size: attachment_size
+                } : null
+            });
         });
     });
 };
