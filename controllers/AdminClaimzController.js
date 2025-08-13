@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const emailCoordinator = require('./Email');
 
 // ============================================================================
 // ADMIN CLAIMS CONTROLLER
@@ -94,6 +95,7 @@ exports.getAllClaims = (req, res) => {
 };
 
 // Process claim (approve/reject)
+// Process claim (approve/reject)
 exports.processClaim = (req, res) => {
   const { id } = req.params;
   const { 
@@ -118,6 +120,15 @@ exports.processClaim = (req, res) => {
     });
   }
 
+  // Handle payout_amount based on status
+  let finalPayoutAmount;
+  if (status === 'approved') {
+    finalPayoutAmount = payout_amount;
+  } else {
+    // For rejected or under_review claims, set to NULL or 0
+    finalPayoutAmount = null; // or use 0 if your DB doesn't allow NULL
+  }
+
   const query = `
     UPDATE claims 
     SET status = ?, decision_reason = ?, payout_amount = ?, admin_notes = ?,
@@ -125,18 +136,36 @@ exports.processClaim = (req, res) => {
     WHERE id = ?
   `;
 
-  db.query(query, [status, decision_reason, payout_amount, admin_notes, admin_id, id], (err, result) => {
+  db.query(query, [status, decision_reason, finalPayoutAmount, admin_notes, admin_id, id], async (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
     
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Claim not found' });
     }
     
+    // SEND EMAIL NOTIFICATION BASED ON STATUS
+    try {
+      let emailResult;
+      
+      if (status === 'approved') {
+        emailResult = await emailCoordinator.notifyClaimApproved(id);
+      } else if (status === 'rejected') {
+        emailResult = await emailCoordinator.notifyClaimRejected(id);
+      } else if (status === 'under_review') {
+        emailResult = await emailCoordinator.notifyClaimUnderReview(id);
+      }
+      
+      console.log(`Email notification sent for claim ${id}:`, emailResult);
+    } catch (emailError) {
+      console.error(`Failed to send email for claim ${id}:`, emailError);
+      // Don't fail the entire request if email fails
+    }
+    
     res.json({ 
       message: `Claim ${status} successfully`,
       claim_id: id,
       status: status,
-      payout_amount: payout_amount
+      payout_amount: finalPayoutAmount
     });
   });
 };
@@ -566,11 +595,26 @@ exports.verifyIdentity = (req, res) => {
     WHERE id = ?
   `;
   
-  db.query(query, [status, notes, admin_id, id], (err, result) => {
+  db.query(query, [status, notes, admin_id, id], async (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
     
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Claim not found' });
+    }
+    
+    // SEND EMAIL NOTIFICATION FOR IDENTITY VERIFICATION - ADD THIS BLOCK
+    try {
+      let emailResult;
+      
+      if (status === 'verified') {
+        emailResult = await emailCoordinator.notifyIdentityVerified(id);
+      } else if (status === 'rejected') {
+        emailResult = await emailCoordinator.notifyIdentityRejected(id);
+      }
+      
+      console.log(`Identity verification email sent for claim ${id}:`, emailResult);
+    } catch (emailError) {
+      console.error(`Failed to send identity verification email for claim ${id}:`, emailError);
     }
     
     res.json({
